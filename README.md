@@ -18,7 +18,7 @@ Rust settlement worker ──→ Solana Devnet (SOL / USDC)
 
 ## Features
 
-- JWT auth (`register` / `login` / `me`, bcrypt hashing)
+- JWT auth (`register` / `login` / `me`, bcrypt hashing, tokens expire after 24h)
 - Multi-currency internal wallet (USD, NGN, EUR, GBP, SOL, USDC)
 - Double-entry ledger (every balance change is a balanced debit/credit set in one PG transaction)
 - Payment intents: `POST /api/v1/payments/intents` with `Idempotency-Key` support
@@ -28,7 +28,8 @@ Rust settlement worker ──→ Solana Devnet (SOL / USDC)
   `https://explorer.solana.com/tx/<SIG>?cluster=devnet`
 - Bet API + async settlement via Redis queue + Rust worker (idempotent, retry-safe)
 - Exchange with mock rates + fee, executed as ledger transactions
-- Transactions history with filters, withdrawals (fiat simulated / crypto recorded), webhook ingress with event-id dedupe
+- Transactions history with filters, fiat withdrawals (simulated)
+- No public webhook endpoint (removed — no provider uses it; internal payment events are recorded directly in SQL)
 - Health probes (`/health`, `/ready`), Swagger at `/docs`
 - Money as `NUMERIC(36,9)` + decimal strings end-to-end (no float math)
 
@@ -101,15 +102,18 @@ curl -X POST localhost:4000/api/v1/exchange/quote -H "Authorization: Bearer $TOK
 
 ## Environment variables
 
-See `.env.example`: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `SOLANA_RPC_URL`,
+See `.env.example`: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET` (**required**, min 32 chars —
+the API refuses to boot without it; tokens expire after 24h),
+`SOLANA_RPC_URL`,
 `SOLANA_NETWORK=devnet` (hard-guarded — anything else refuses to boot),
-`SOLANA_USDC_MINT`, `FLOWPAY_TREASURY_ADDRESS`, `EXCHANGE_FEE_BPS`.
+`SOLANA_USDC_MINT`, `FLOWPAY_TREASURY_ADDRESS`, `EXCHANGE_FEE_BPS`, `FRONTEND_URL` (CORS allowlist).
 
 ## Known limitations (MVP)
 
 - Uses raw `pg` with parameterized queries + SQL migrations instead of Prisma/Drizzle
   (deliberate: fewer moving parts; injection-safe via placeholders).
-- Crypto withdrawals reserve funds and are recorded as `processing`; on-chain treasury
-  payout is not yet implemented (deposits are the live devnet path).
+- Crypto withdrawals are NOT supported: `POST /withdrawals` rejects `SOL`/`USDC` with
+  a clear error (on-chain treasury payout is not implemented; deposits are the live
+  devnet path). Only fiat withdrawals (simulated) are available.
 - Exchange rates are static mocks, bet outcomes are simulated (45% win, hash-derived).
 - Fiat is an explicit mock provider (Paystack/Stripe-shaped seam left for later).

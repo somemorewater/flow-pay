@@ -10,6 +10,7 @@ const registerSchema = z.object({
 
 export async function authRoutes(app: FastifyInstance) {
   app.post('/register', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     schema: {
       tags: ['auth'],
       body: { type: 'object', properties: { email: { type: 'string' }, password: { type: 'string' } } },
@@ -36,6 +37,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/login', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     schema: { tags: ['auth'] },
   }, async (req, reply) => {
     const parsed = registerSchema.safeParse(req.body);

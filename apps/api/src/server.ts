@@ -14,7 +14,6 @@ import { transactionRoutes } from './modules/transactions/routes.js';
 import { exchangeRoutes } from './modules/exchange/routes.js';
 import { betRoutes } from './modules/bets/routes.js';
 import { withdrawalRoutes } from './modules/withdrawals/routes.js';
-import { webhookRoutes } from './modules/webhooks/routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -36,7 +35,8 @@ export async function buildServer() {
   });
   await app.register(swaggerUi, { routePrefix: '/docs' });
 
-  await app.register(fastifyJwt, { secret: config.jwtSecret });
+  // JWTs expire after 24h. Expired/invalid tokens fail jwtVerify → clean 401 via requireAuth.
+  await app.register(fastifyJwt, { secret: config.jwtSecret, sign: { expiresIn: '24h' } });
   app.decorate('authenticate', requireAuth);
 
   // CORS: allow only the configured frontend origin(s). Comma-separated list supported.
@@ -72,7 +72,6 @@ export async function buildServer() {
   await app.register(exchangeRoutes, { prefix: '/api/v1/exchange' });
   await app.register(betRoutes, { prefix: '/api/v1/bets' });
   await app.register(withdrawalRoutes, { prefix: '/api/v1/withdrawals' });
-  await app.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
 
   return app;
 }

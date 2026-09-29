@@ -3,7 +3,7 @@ import { z } from 'zod';
 import Decimal from 'decimal.js';
 import { pool, withTx } from '../../lib/db.js';
 import { commitLedger } from '../../lib/ledger.js';
-import { ensureBalanceRow } from '../../lib/wallets.js';
+import { ensureBalanceRow, SUPPORTED_CURRENCIES } from '../../lib/wallets.js';
 import { enqueueSettlementJob } from '../../lib/redis.js';
 import { getIdempotentReplay, storeIdempotentResponse, idempotencyKeyOf } from '../../lib/idempotency.js';
 
@@ -19,6 +19,9 @@ export async function betRoutes(app: FastifyInstance) {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid bet request.' } });
     const currency = parsed.data.currency.toUpperCase();
+    if (!(SUPPORTED_CURRENCIES as readonly string[]).includes(currency)) {
+      return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: `Currency must be one of ${SUPPORTED_CURRENCIES.join(', ')}.` } });
+    }
     const stake = new Decimal(parsed.data.stake);
     const odds = new Decimal(parsed.data.odds);
     if (stake.lte(0)) return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Stake must be positive.' } });

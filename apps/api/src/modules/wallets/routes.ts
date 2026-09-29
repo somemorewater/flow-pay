@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { pool } from '../../lib/db.js';
-import { getWalletView } from '../../lib/wallets.js';
+import { getWalletView, SUPPORTED_CURRENCIES } from '../../lib/wallets.js';
 
 export async function walletRoutes(app: FastifyInstance) {
   app.get('/', { onRequest: [app.authenticate] }, async (req, reply) => {
@@ -12,11 +12,18 @@ export async function walletRoutes(app: FastifyInstance) {
   app.get('/ledger', { onRequest: [app.authenticate] }, async (req, reply) => {
     const user = req.user as { sub: string };
     const { currency } = req.query as { currency?: string };
+    let ccy: string | undefined;
+    if (currency) {
+      ccy = currency.toUpperCase();
+      if (!(SUPPORTED_CURRENCIES as readonly string[]).includes(ccy)) {
+        return reply.code(400).send({ success: false, error: { code: 'VALIDATION_ERROR', message: `Invalid currency. Must be one of ${SUPPORTED_CURRENCIES.join(', ')}.` } });
+      }
+    }
     const params: any[] = [user.sub];
     let filter = '';
-    if (currency) {
+    if (ccy) {
       filter = 'AND e.currency = $2';
-      params.push(currency);
+      params.push(ccy);
     }
     // Resolve user's balance ids to scope ledger entries to this user.
     const balances = await pool.query(
@@ -29,7 +36,7 @@ export async function walletRoutes(app: FastifyInstance) {
       `SELECT e.*, lt.description, lt.reference_type, lt.reference_id, lt.created_at AS tx_created_at
        FROM ledger_entries e JOIN ledger_transactions lt ON lt.id = e.ledger_transaction_id
        WHERE e.account_ref = ANY($1) ${filter} ORDER BY e.created_at DESC LIMIT 100`,
-      ids.length && currency ? [ids, currency] : [ids],
+      ccy ? [ids, ccy] : [ids],
     );
     return reply.send({ success: true, data: { entries: r.rows } });
   });

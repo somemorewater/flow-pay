@@ -176,6 +176,7 @@ export async function paymentRoutes(app: FastifyInstance) {
   // Verify crypto payment against REAL Solana devnet transaction
   app.post('/:id/verify', {
     onRequest: [app.authenticate],
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
     schema: { tags: ['payments'] },
   }, async (req, reply) => {
     const user = req.user as { sub: string };

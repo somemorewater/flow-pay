@@ -21,12 +21,21 @@ function required(name: string, fallback?: string): string {
   return v;
 }
 
+// JWT_SECRET has no fallback: the backend refuses to boot without it.
+const jwtSecret = process.env.JWT_SECRET ?? '';
+if (!jwtSecret) {
+  throw new Error('Missing required env var JWT_SECRET — set a long random value (min 32 chars). Refusing to boot.');
+}
+if (jwtSecret.length < 32) {
+  throw new Error('JWT_SECRET must be at least 32 characters. Refusing to boot.');
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   databaseUrl: required('DATABASE_URL', 'postgres://flowpay:flowpaysecret@localhost:5432/flowpay'),
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-  jwtSecret: required('JWT_SECRET', 'dev-only-change-me-min-32-chars-xxxx'),
+  jwtSecret,
   solanaRpcUrl: process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com',
   solanaNetwork: process.env.SOLANA_NETWORK ?? 'solana-devnet',
   solanaUsdcMint: process.env.SOLANA_USDC_MINT ?? '4zMMC9srt5Ri5X14GAgXhaHii3Gn9VffaKEzWVdcLJ',
