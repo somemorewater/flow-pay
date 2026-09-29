@@ -65,12 +65,27 @@ Get devnet SOL: `solana airdrop 2 <ADDRESS> --url devnet` or https://faucet.sola
 1. Connect Phantom (frontend holds the private key — backend NEVER takes custody).
 2. POST /api/v1/payments/intents { amount, currency: "SOL"|"USDC", type: "crypto" }
    → backend returns { id, recipient (treasury), amount, asset, network }.
-3. Frontend builds a transfer to `recipient` for exactly `amount` and asks Phantom to sign.
+3. Frontend builds a transfer to `recipient` for exactly `amount` (exact integer
+   base-unit math, no floats) and asks Phantom to sign.
 4. Frontend POSTs { signature } to /api/v1/payments/:id/verify.
-5. Backend fetches the REAL transaction from devnet, verifies success / recipient /
+5. Backend waits for the transaction to appear at `confirmed` commitment, then
+   fetches the REAL transaction from devnet, verifies success / recipient /
    amount / mint / sender, rejects replays + wrong-user + expired, then completes
-   the payment and posts the ledger entries.
+   the payment and posts the ledger entries. Unexpected RPC failures are logged
+   server-side and answered with a generic message (no raw RPC text to clients).
 ```
+
+### Devnet setup required for the demo
+
+- Fund your Phantom wallet with devnet SOL: `solana airdrop 2 <ADDRESS> --url devnet`
+  or https://faucet.solana.com.
+- `FLOWPAY_TREASURY_ADDRESS` must be a valid devnet address (public key only).
+  It does not need pre-funding for SOL (a transfer creates the account), and the
+  frontend creates the treasury's USDC associated token account automatically
+  (rent paid by the sender) when needed.
+- `SOLANA_USDC_MINT` must be a **valid** devnet token mint address. USDC intent
+  creation is rejected with a clear error while the mint is misconfigured — the
+  backend never guesses or substitutes another token.
 
 ## Example requests
 

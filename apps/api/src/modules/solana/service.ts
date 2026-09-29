@@ -8,6 +8,25 @@ export function explorerTxUrl(signature: string): string {
   return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
 
+/** True when the configured USDC mint is a syntactically valid Solana address. */
+export function usdcMintConfigured(): boolean {
+  try {
+    new PublicKey(config.solanaUsdcMint);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Error codes whose messages are user-safe (they describe the verification
+ * outcome, not internals). Anything else (e.g. raw RPC failures) must be
+ * logged server-side and replaced with a generic message.
+ */
+export const USER_SAFE_VERIFICATION_CODES = new Set(['NOT_FOUND', 'FAILED', 'MISMATCH', 'SENDER', 'CONFIG']);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function getAccountBalanceSol(address: string): Promise<string> {
   const lamports = await connection.getBalance(new PublicKey(address));
   return new Decimal(lamports).div(LAMPORTS_PER_SOL).toString();
@@ -30,6 +49,25 @@ export interface VerificationResult {
 }
 
 /**
+ * Fetch a parsed transaction, waiting briefly for Devnet propagation.
+ * A signature submitted immediately after Phantom sends it may not be
+ * visible yet — retry instead of failing the verification outright.
+ * Strictness is unchanged: the returned tx is still fully verified.
+ */
+async function getConfirmedParsedTransaction(signature: string): Promise<any | null> {
+  const attempts = 15;
+  for (let i = 0; i < attempts; i++) {
+    const tx = await connection.getParsedTransaction(signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
+    if (tx) return tx;
+    if (i < attempts - 1) await sleep(2000);
+  }
+  return null;
+}
+
+/**
  * Verify a REAL Solana devnet transaction against the payment intent.
  * Throws on any mismatch. Never trusts frontend claims — chain is source of truth.
  */
@@ -37,10 +75,10 @@ export async function verifyDevnetTransfer(
   signature: string,
   expected: ExpectedTransfer,
 ): Promise<VerificationResult> {
-  const tx = await connection.getParsedTransaction(signature, {
-    commitment: 'confirmed',
-    maxSupportedTransactionVersion: 0,
-  });
+  if (expected.asset === 'USDC' && !usdcMintConfigured()) {
+    throw Object.assign(new Error('USDC payments are not configured on this backend.'), { code: 'CONFIG' });
+  }
+  const tx = await getConfirmedParsedTransaction(signature);
   if (!tx) throw Object.assign(new Error('Transaction not found on Solana devnet.'), { code: 'NOT_FOUND' });
   if (tx.meta?.err) throw Object.assign(new Error('Transaction failed on-chain.'), { code: 'FAILED' });
 

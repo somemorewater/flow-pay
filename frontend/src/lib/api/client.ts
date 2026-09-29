@@ -127,6 +127,17 @@ export function userMessage(e: unknown): string {
     if (m.includes('user rejected') || m.includes('rejected the request')) {
       return 'Transaction rejected — you cancelled the Phantom transaction.';
     }
+    if (
+      m.includes('insufficient') ||
+      m.includes('no record of a prior credit') ||
+      m.includes('insufficient funds') ||
+      m.includes('attempt to debit')
+    ) {
+      return 'Insufficient balance — fund your Phantom wallet with Devnet SOL (and USDC for token payments) and try again.';
+    }
+    if (m.includes('blockhash') || m.includes('expired') || m.includes('simulation failed')) {
+      return 'The Solana transaction expired before it could be sent. Please try again.';
+    }
     if (m.includes('failed to fetch') || m.includes('network')) {
       return 'Network error. Please check your connection and try again.';
     }

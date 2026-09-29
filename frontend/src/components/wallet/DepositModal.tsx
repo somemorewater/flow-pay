@@ -34,6 +34,7 @@ export default function DepositModal({ onClose }: { onClose: () => void }) {
   const [intent, setIntent] = useState<PaymentIntent | null>(null);
   const [phantom, setPhantom] = useState<string | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
 
   const pick = (k: 'fiat' | 'crypto') => {
     setKind(k);
@@ -91,7 +92,9 @@ export default function DepositModal({ onClose }: { onClose: () => void }) {
       setSignature(sig);
       setPhase('verifying');
       // Backend independently verifies the tx on Solana Devnet before crediting.
-      await verifyPayment(intent.id, sig);
+      const verification = await verifyPayment(intent.id, sig);
+      // Explorer URL comes from the backend verification result (Devnet).
+      setExplorerUrl(verification.explorerUrl);
       await refresh();
       setPhase('done');
     } catch (e) {
@@ -173,7 +176,7 @@ export default function DepositModal({ onClose }: { onClose: () => void }) {
             <span>Network</span><b>Solana Devnet</b>
             <span>Transaction</span><b className="mono">{shortenAddress(signature)}</b>
           </div>
-          <a className="btn" href={explorerTxUrl(signature)} target="_blank" rel="noreferrer">View on Solana Explorer</a>
+          <a className="btn" href={explorerUrl ?? explorerTxUrl(signature)} target="_blank" rel="noreferrer">View on Solana Explorer</a>
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
       )}

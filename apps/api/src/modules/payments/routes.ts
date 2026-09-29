@@ -7,7 +7,7 @@ import { commitLedger } from '../../lib/ledger.js';
 import { ensureBalanceRow } from '../../lib/wallets.js';
 import { getIdempotentReplay, storeIdempotentResponse, idempotencyKeyOf } from '../../lib/idempotency.js';
 import { config } from '../../lib/config.js';
-import { verifyDevnetTransfer, explorerTxUrl, validateSolanaAddress } from '../solana/service.js';
+import { verifyDevnetTransfer, explorerTxUrl, validateSolanaAddress, usdcMintConfigured, USER_SAFE_VERIFICATION_CODES } from '../solana/service.js';
 
 const FIAT = ['NGN', 'USD', 'EUR', 'GBP'];
 const CRYPTO = ['SOL', 'USDC'];
@@ -64,6 +64,9 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     if (isCrypto && !recipient) {
       return reply.code(500).send({ success: false, error: { code: 'INTERNAL_ERROR', message: 'FLOWPAY_TREASURY_ADDRESS is not configured.' } });
+    }
+    if (isCrypto && ccy === 'USDC' && !usdcMintConfigured()) {
+      return reply.code(500).send({ success: false, error: { code: 'INTERNAL_ERROR', message: 'USDC payments are not configured on this backend.' } });
     }
 
     const out = await withTx(async (client) => {
@@ -222,11 +225,22 @@ export async function paymentRoutes(app: FastifyInstance) {
       });
       v = res;
     } catch (e: any) {
+      // Never leak raw RPC/stack text to the client. Known verification
+      // outcomes are user-safe; anything else is logged and generalized.
       const code = e?.code === 'NOT_FOUND' ? 404 : 422;
+      const safe = e?.code && USER_SAFE_VERIFICATION_CODES.has(e.code);
+      if (!safe) {
+        app.log.error({ err: e, paymentIntentId: id }, 'solana verification transport failure');
+      }
       await pool.query(`UPDATE payments SET status='processing', updated_at=now() WHERE payment_intent_id=$1`, [id]);
       return reply.code(code).send({
         success: false,
-        error: { code: 'VERIFICATION_FAILED', message: e?.message ?? 'On-chain verification failed.' },
+        error: {
+          code: 'VERIFICATION_FAILED',
+          message: safe && e?.message
+            ? e.message
+            : 'Could not verify the transaction on Solana Devnet. Please try again in a moment.',
+        },
       });
     }
 
