@@ -1,9 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Field, { Status } from '@/components/ui/Field';
 import { userMessage } from '@/lib/api/client';
 import { createBet, getBet, getBets, settleBet } from '@/lib/api/bets';
-import { isTerminal } from '@/lib/api/poll';
+import { pollUntil } from '@/lib/api/poll';
 import { dateTime, money } from '@/lib/format';
 import { parseAmount } from '@/lib/utils';
 import { useApp } from '@/lib/store';
@@ -21,6 +21,7 @@ export default function Bets() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [settling, setSettling] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function load() {
     setLoading(true);
@@ -35,6 +36,7 @@ export default function Bets() {
 
   useEffect(() => {
     load();
+    return () => abortRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -58,25 +60,22 @@ export default function Bets() {
   }
 
   async function settle(id: string) {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     setSettling(id);
     setErr('');
     try {
       await settleBet(id);
-      // Poll the backend until the Rust worker settles the bet.
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 120000);
-      try {
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          if (ctrl.signal.aborted) throw new Error('Timed out waiting for settlement.');
-          await new Promise((r) => setTimeout(r, 3000));
-          const b = await getBet(id);
-          setBets((prev) => prev.map((x) => (x.id === id ? b : x)));
-          if (isTerminal(b.status)) break;
-        }
-      } finally {
-        clearTimeout(t);
-      }
+      // Wait for the actual backend settlement status via the Rust worker.
+      // The frontend never determines the outcome itself.
+      await pollUntil({
+        fetchStatus: () => getBet(id),
+        getStatus: (b) => b.status,
+        intervalMs: 3000,
+        signal: ctrl.signal,
+        onUpdate: (b) => setBets((prev) => prev.map((x) => (x.id === id ? b : x))),
+      });
       await Promise.all([load(), refresh()]);
     } catch (e) {
       setErr(userMessage(e));

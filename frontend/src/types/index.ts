@@ -123,3 +123,19 @@ export interface Withdrawal {
   note?: string;
   created_at: string;
 }
+
+/** Double-entry ledger line joined with its transaction header (backend: GET /wallets/ledger). */
+export interface LedgerEntry {
+  id: string;
+  ledger_transaction_id: string;
+  account_type: 'user' | 'house' | 'escrow' | 'fee';
+  account_ref: string;
+  currency: string;
+  debit: string;
+  credit: string;
+  created_at: string;
+  description: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  tx_created_at: string;
+}

@@ -1,11 +1,14 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Field, { Status } from '@/components/ui/Field';
+import Modal from '@/components/ui/Modal';
 import { userMessage } from '@/lib/api/client';
 import { getPayment, getPayments } from '@/lib/api/payments';
+import { isTerminal, pollUntil } from '@/lib/api/poll';
+import { shortenAddress } from '@/lib/api/solana';
 import { dateTime, money } from '@/lib/format';
 import { useApp } from '@/lib/store';
-import type { ApiPayment } from '@/types';
+import type { ApiPayment, PaymentIntent } from '@/types';
 
 export default function Payments() {
   const { refresh } = useApp();
@@ -14,6 +17,9 @@ export default function Payments() {
   const [err, setErr] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [detail, setDetail] = useState<PaymentIntent | null>(null);
+  const [detailErr, setDetailErr] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
 
   async function load() {
     setLoading(true);
@@ -29,28 +35,41 @@ export default function Payments() {
 
   useEffect(() => {
     load();
+    return () => abortRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Status comes from the backend — poll it while a payment is incomplete.
+  // Single loop via the shared pollUntil utility; aborted on unmount or reselect.
   useEffect(() => {
+    abortRef.current?.abort();
     if (!selected) return;
-    const t = setInterval(async () => {
-      try {
-        const pi = await getPayment(selected);
-        setStatus(pi.status);
-        if (['completed', 'failed', 'expired'].includes(pi.status)) {
-          clearInterval(t);
-          load();
-          refresh();
-        }
-      } catch {
-        // Keep last known status on transient errors.
-      }
-    }, 4000);
-    return () => clearInterval(t);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    pollUntil({
+      fetchStatus: () => getPayment(selected),
+      getStatus: (pi) => pi.status,
+      intervalMs: 4000,
+      signal: ctrl.signal,
+      onUpdate: (pi) => setStatus(pi.status),
+    }).then(() => {
+      load();
+      refresh();
+    }).catch(() => {
+      // Timeout/abort/transient errors: keep last known status.
+    });
+    return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
+
+  async function openDetail(intentId: string) {
+    setDetailErr('');
+    try {
+      setDetail(await getPayment(intentId));
+    } catch (e) {
+      setDetailErr(userMessage(e));
+    }
+  }
 
   return (
     <div className="narrow">
@@ -64,17 +83,33 @@ export default function Payments() {
           {payments.map((p) => (
             <div className="kv" key={p.id}>
               <span>Amount</span><b>{money(p.amount, p.currency)} {p.currency}</b>
-              <span>Type</span><b>{p.type} · {p.provider}</b>
+              <span>Type</span><b>{p.type} · {p.provider === 'mock-fiat' ? 'Simulated fiat' : p.provider}</b>
               <span>Status</span><Status s={selected === p.intentId && status ? status : p.status} />
               <span>Created</span><b>{dateTime(p.createdAt)}</b>
               {p.explorerUrl && <><span>Transaction</span><a href={p.explorerUrl} target="_blank" rel="noreferrer">View on Solana Explorer</a></>}
-              <button className="btn ghost" onClick={() => { setSelected(p.intentId); setStatus(p.status); }}>Track status</button>
+              <span>Details</span><span><button className="btn ghost" onClick={() => openDetail(p.intentId)}>View</button>{' '}<button className="btn ghost" onClick={() => { setSelected(p.intentId); setStatus(p.status); }}>Track status</button></span>
             </div>
           ))}
         </div>
       )}
+      {detailErr && <p role="alert" className="error">{detailErr}</p>}
       <Field label="Track a payment"><input placeholder="Payment intent ID (pi_…)" value={selected ?? ''} onChange={(e) => setSelected(e.target.value || null)} /></Field>
-      {selected && status && <p className="muted">Status: <Status s={status} /></p>}
+      {selected && status && !isTerminal(status) && <p className="muted">Tracking… Status: <Status s={status} /></p>}
+      {selected && status && isTerminal(status) && <p className="muted">Status: <Status s={status} /></p>}
+      {detail && (
+        <Modal title="Payment details" onClose={() => setDetail(null)}>
+          <div className="kv">
+            <span>Payment ID</span><b className="mono">{detail.id}</b>
+            <span>Amount</span><b>{money(detail.amount, detail.currency)} {detail.currency}</b>
+            {detail.asset && <><span>Asset</span><b>{detail.asset}</b></>}
+            <span>Type</span><b>{detail.type}</b>
+            <span>Status</span><Status s={detail.status} />
+            <span>Network</span><b>{detail.network}</b>
+            {detail.recipient && <><span>Recipient</span><b className="mono">{shortenAddress(detail.recipient)}</b></>}
+            {detail.type === 'fiat' && <><span>Provider</span><b>Simulated fiat — no real money moved</b></>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -17,7 +17,3 @@ export async function getTransactions(filters: TransactionFilters = {}): Promise
   const data = await api.get<{ transactions: ApiTransaction[] }>(`/transactions?${qs.toString()}`);
   return data.transactions;
 }
-
-export async function getTransaction(id: string): Promise<ApiTransaction> {
-  return api.get<ApiTransaction>(`/transactions/${encodeURIComponent(id)}`);
-}

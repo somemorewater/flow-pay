@@ -2,6 +2,9 @@
 import { useState } from 'react';
 import Field from '@/components/ui/Field';
 import WalletOverview from '@/components/wallet/WalletOverview';
+import SolanaBalance from '@/components/wallet/SolanaBalance';
+import WithdrawalHistory from '@/components/wallet/WithdrawalHistory';
+import LedgerView from '@/components/wallet/LedgerView';
 import { userMessage } from '@/lib/api/client';
 import { createWithdrawal } from '@/lib/api/withdrawals';
 import { parseAmount } from '@/lib/utils';
@@ -16,6 +19,7 @@ export default function WalletPage() {
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [busy, setBusy] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,6 +32,7 @@ export default function WalletPage() {
     try {
       await createWithdrawal({ amount: String(n), currency: cur });
       await refresh();
+      setHistoryVersion((v) => v + 1);
       setOk('Withdrawal completed (simulated fiat).');
       setAmount('');
     } catch (e) {
@@ -56,6 +61,12 @@ export default function WalletPage() {
           <button className="btn primary" disabled={busy}>{busy ? 'Processing…' : 'Withdraw'}</button>
         </form>
       </div>
+      <h2>Withdrawal history</h2>
+      <WithdrawalHistory version={historyVersion} />
+      <h2>Phantom balance</h2>
+      <SolanaBalance />
+      <h2>Ledger</h2>
+      <LedgerView />
     </>
   );
 }

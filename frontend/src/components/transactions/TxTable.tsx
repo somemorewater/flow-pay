@@ -38,7 +38,7 @@ export default function TxTable({ txns, onSelect, showId }: { txns: ApiTransacti
       <table className="tx desk-only"><thead><tr>{showId && <th>Transaction ID</th>}<th>Type</th><th>Description</th><th>Amount</th><th>Currency</th><th>Status</th><th>Date</th></tr></thead>
         <tbody>{txns.map((t) => (
           <tr key={t.id} tabIndex={onSelect ? 0 : undefined} onClick={() => open(t)} onKeyDown={(e) => e.key === 'Enter' && open(t)} className={onSelect ? 'click' : ''}>
-            {showId && <td className="mono">{t.id}</td>}
+            {showId && <td className="mono">{t.id.slice(0, 8)}…</td>}
             <td><span className="ico" aria-hidden>{ICON[t.type] ?? '•'}</span> {t.type[0].toUpperCase() + t.type.slice(1)}</td><td>{describe(t)}</td>
             <td className={`num ${signedAmount(t) > 0 ? 'pos' : ''}`}>{money(signedAmount(t), t.currency, true)}</td><td>{t.currency}</td><td><Status s={t.status} /></td><td className="muted">{dateTime(t.created_at)}</td>
           </tr>))}</tbody></table>

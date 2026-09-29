@@ -1,35 +1,60 @@
-# FlowPay — Multi-Currency Payment Gateway (backend MVP)
+# FlowPay — Multi-Currency Payment Gateway (MVP)
 
-Multi-currency payment infrastructure demonstrating fiat payment processing, **REAL Solana Devnet settlement**, double-entry accounting, idempotency, and asynchronous Rust settlement.
+Multi-currency payment infrastructure with a Next.js frontend, a Node.js API backed by
+a PostgreSQL double-entry ledger, Redis-backed idempotency and job queue, an async Rust
+settlement worker, and **REAL Solana Devnet deposits** verified on-chain.
 
 ```
-Next.js frontend
-      ↓ REST
-Node.js API (Fastify + TypeScript)
-      ↓
-PostgreSQL (source of truth) + Redis (idempotency / job queue)
-      ↓
-Rust settlement worker ──→ Solana Devnet (SOL / USDC)
+Browser (Phantom wallet for signing)
+   │  NEXT_PUBLIC_API_URL
+   ▼
+Next.js frontend (http://localhost:3000)
+   │  REST + JWT
+   ▼
+Node.js API (Fastify + TypeScript, http://localhost:4000, Swagger at /docs)
+   │
+   ├── PostgreSQL (source of truth: wallets, double-entry ledger, payments, bets)
+   ├── Redis (idempotency cache + settlement job queue)
+   ├── Rust settlement worker (consumes queue, settles bets, posts ledger entries)
+   └── Solana Devnet (SOL / USDC deposit verification)
 ```
 
-> **REAL:** Solana Devnet transactions (verified on-chain, never fabricated).
-> **SIMULATED:** fiat payments, exchange rates, bet outcomes. Mock fiat uses an explicit
-> `mock-fiat` provider so it can never be mistaken for real money movement.
+## What is real vs simulated
+
+### Real
+
+- Authentication (JWT, bcrypt, 24h expiry)
+- PostgreSQL wallet balances + double-entry ledger (viewable in-app via Wallet → Ledger)
+- Solana Devnet deposits: Phantom signing, backend on-chain verification, ledger credit
+- Solana transaction history with Devnet Explorer links
+- Exchange execution against configured rates (ledger-backed, with fee)
+- Bet settlement through Redis → Rust worker → ledger
+- Idempotency on mutating endpoints
+
+### Simulated / demo-only
+
+- Fiat deposits and withdrawals (`mock-fiat` provider — no real money moves)
+- Exchange rates (configured mock table, seeded — not live market data; the
+  dashboard total is explicitly labeled "at configured rates")
+- Bet outcomes (deterministic, hash-derived 45% win — the backend derives them)
+- Crypto withdrawals are disabled end-to-end (no on-chain payouts)
 
 ## Features
 
 - JWT auth (`register` / `login` / `me`, bcrypt hashing, tokens expire after 24h)
-- Multi-currency internal wallet (USD, NGN, EUR, GBP, SOL, USDC)
+- Multi-currency internal wallet (USD, NGN, EUR, GBP, SOL, USDC) with ledger view,
+  withdrawal history, and external Phantom Devnet balance display
 - Double-entry ledger (every balance change is a balanced debit/credit set in one PG transaction)
-- Payment intents: `POST /api/v1/payments/intents` with `Idempotency-Key` support
+- Payment intents: `POST /api/v1/payments/intents` with `Idempotency-Key` support,
+  plus payment detail view with asset, network, recipient, signature, and Explorer link
 - **SOL + USDC deposits verified against REAL Solana devnet transactions**
   (`POST /api/v1/payments/:id/verify` checks existence, success, recipient, amount, mint, sender, replay)
 - `blockchain_transactions` table stores signatures → frontend links
   `https://explorer.solana.com/tx/<SIG>?cluster=devnet`
-- Bet API + async settlement via Redis queue + Rust worker (idempotent, retry-safe)
+- Bet API + async settlement via Redis queue + Rust worker (idempotent, retry-safe),
+  with live settlement-status polling in the UI
 - Exchange with mock rates + fee, executed as ledger transactions
-- Transactions history with filters, fiat withdrawals (simulated)
-- No public webhook endpoint (removed — no provider uses it; internal payment events are recorded directly in SQL)
+- Transactions history with server-side filters and per-type explanations
 - Health probes (`/health`, `/ready`), Swagger at `/docs`
 - Money as `NUMERIC(36,9)` + decimal strings end-to-end (no float math)
 
@@ -58,6 +83,18 @@ pnpm run dev                    # frontend on http://localhost:3000
 ```
 
 Get devnet SOL: `solana airdrop 2 <ADDRESS> --url devnet` or https://faucet.solana.com.
+
+## Portfolio demo script (5 minutes)
+
+1. Register at http://localhost:3000, open the dashboard — balances load from PostgreSQL.
+2. **SOL deposit (real Devnet):** Wallet → Deposit → Crypto → SOL → amount → Continue →
+   Connect Phantom → Pay with Phantom → approve. Payment completes only after backend
+   on-chain verification; open the Devnet Explorer link and watch the SOL balance update.
+3. **Wallet → Ledger:** every deposit/settlement shows its double-entry debit/credit lines.
+4. **Exchange:** quote and execute (ledger-backed, fee applied). **Bets:** create, then
+   Settle — the Rust worker settles via Redis and the UI polls the real status.
+5. **Transactions:** filter by type/currency/status; open a deposit to see its linked
+   payment status and Explorer link. **Payments:** track any intent and inspect details.
 
 ## Solana devnet deposit flow (the core path)
 
