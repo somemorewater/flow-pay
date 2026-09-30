@@ -36,7 +36,15 @@ async fn main() -> Result<()> {
 
     loop {
         // BLPOP with 5s timeout; on timeout, sweep stale pending settlements from DB.
-        let job: Option<Vec<String>> = conn.blpop(QUEUE, 5.0).await.unwrap_or(None);
+        // A Redis error backs off instead of busy-looping the DB sweep below.
+        let job: Option<Vec<String>> = match conn.blpop(QUEUE, 5.0).await {
+            Ok(j) => j,
+            Err(e) => {
+                error!(error = %e, "redis blpop failed; backing off");
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                continue;
+            }
+        };
         match job {
             Some(parts) => {
                 if parts.len() < 2 {

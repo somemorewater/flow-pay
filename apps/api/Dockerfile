@@ -1,7 +1,8 @@
 FROM node:22-alpine
+RUN corepack enable
 WORKDIR /app/apps/api
-COPY apps/api/package.json apps/api/package-lock.json* ./
-RUN pnpm install --production=false || npm install
+COPY apps/api/package.json apps/api/pnpm-lock.yaml apps/api/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY apps/api ./
 COPY migrations /app/migrations
 RUN pnpm run build
